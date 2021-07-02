@@ -8,6 +8,8 @@ Created on Thu Jul  1 04:45:21 2021
 import re
 import os
 import wisepy2
+import sqlite3
+from tqdm import tqdm
 from collections import defaultdict
 from hanzidentifier import is_simplified as _is_simplified
 from pypinyin import pinyin, Style, load_single_dict, load_phrases_dict
@@ -15,11 +17,13 @@ from itertools import product, accumulate
 from pypinyin.style.tone import ToneConverter
 from linq import Flow
 from functools import lru_cache
+from sqlite_interops import SQLCache
 from im_db.db_kXHC1983 import pinyin_dict as _pinyin_dict
 from im_db.db_kTGHZ2013 import pinyin_dict
 from im_db.db_hanzi_endstroke import endstroke
 from im_db.db_hanzi_spell import hanzi_spell
 from im_db.db_hanzi_wubi86 import hanzi_wubi86_spell
+
 
 stroke_map = {
     '1': 'g',
@@ -142,16 +146,18 @@ def all_simplified(word):
     return all(_is_simplified(c) for c in word)
 
 
-def generate(gen_func, *vocab_filenames: str):
+def generate(gen_func, *vocab_filenames: str, rime: bool):
     delay_records = []
-
-    def _delay_gen(word, spell, freq):
-        delay_records.append([word, spell, freq])
-
+    
+    if rime:
+        def _delay_gen(spell, word, freq):
+            delay_records.append([word, spell, freq])
+    else:
+        _delay_gen = gen_func
     def _apply_delay_gen():
         order_(delay_records)
-        for word, spell, freq in delay_records:
-            gen_func(word, spell, freq)
+        for spell, word, freq in delay_records:
+            gen_func(spell, word, freq)
 
     check_dup = set()
     wubis = Flow(hanzi_wubi86_spell).group_by(lambda x: x[0])._
@@ -189,10 +195,13 @@ def generate(gen_func, *vocab_filenames: str):
                     continue
                 else:
                     check_dup.add(dup_key)
-                _delay_gen(ch, code, freq)
+                _delay_gen(code, ch, freq)
     _apply_delay_gen()
     check_dup.clear()
     del delay_records, _apply_delay_gen, _delay_gen
+    
+    # flush
+    gen_func(None, None, None)
     print(f"{cnt_hanzi}单字已处理完毕...")
     cnt_word = 0
     for vocab_filename in vocab_filenames:
@@ -233,7 +242,8 @@ def generate(gen_func, *vocab_filenames: str):
                         continue
                     else:
                         check_dup.add(dup_key)
-                    gen_func(word, code, int(freq))
+                    gen_func(code, word, int(freq))
+    gen_func(None, None, None)
     print(f"{cnt_word}词语已处理完毕...")
 
 
@@ -249,11 +259,23 @@ def order_(results: list[list[tuple[str, str, int]]]):
         score = 1 + int(freq / (unique_filter[spell] ** 3))
         record[2] = score
 
-    results = [tuple(record) for record in results]
-    results.sort(key=lambda x: tuple((c, x[2]) for c in x[1]), reverse=True)
+    results.sort(key=lambda x: x[2], reverse=True)
 
 
-def get_gen_func(name: str, path: str):
+def taine_gen_func(name: str, path: str):
+    database_path = os.path.join(path, f"{name}.db")
+    db = SQLCache(database_path)
+    cache = []
+    def direct_gen(spell, word, freq):
+        if spell is None:
+            db.add_many(cache)
+            cache.clear()
+        else:
+            cache.append((word, spell, freq))
+        
+    return direct_gen
+
+def rime_gen_func(name: str, path: str):
     build = os.path.join(path, "build", f"{name}.table.bin")
     if os.path.exists(build):
         os.remove(build)
@@ -262,20 +284,21 @@ def get_gen_func(name: str, path: str):
 ---
 name: {name}
 version: "0.1"
-sort: original
+sort: by_weight
 ...
 """)
 
-    def direct_gen(word, spell, freq):
+    def direct_gen(spell, word, freq):
+        if word is None:
+            return
         f.write(f"{word}\t{spell}\t{freq}\n")
     return direct_gen
 
 
-def main(im_name: str, user_path: str, *vocab_files: str):
-    gen_func = get_gen_func(im_name, user_path)
-
-    generate(gen_func, *vocab_files)
-
+def main(im_name: str, user_path: str, *vocab_files: str, norime:bool=True):
+    gen_func = (rime_gen_func if norime else taine_gen_func)(im_name, user_path)
+    print(gen_func)
+    generate(gen_func, *vocab_files, rime=not norime)
 
 if __name__ == '__main__':
     wisepy2.wise(main)()

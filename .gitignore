@@ -1,5 +1,6 @@
 my_vocab.txt
 standard_vocab.txt
+ignore/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
