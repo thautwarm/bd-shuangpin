@@ -2,6 +2,7 @@ t_shuangpin.db
 my_vocab.txt
 standard_vocab.txt
 ignore/
+trie
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
