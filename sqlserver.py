@@ -86,13 +86,13 @@ class IMESever(SocketServer):
                 return
             options = list(self.query(inp, self.n_max_completions))
             print(options)
-            buff = json.dumps(options).encode(encoding="gbk")
+            buff = json.dumps(options).encode("raw_unicode_escape")
             x = len(buff)
             
             if x < 10000:
                 digits = str(x)
                 digits = (None, '000', '00', '0', '')[len(digits)] + digits
-                conn.send(digits.encode())
+                conn.send(digits.encode("raw_unicode_escape"))
                 conn.send(buff)
             else:
                 conn.send(b'0002')

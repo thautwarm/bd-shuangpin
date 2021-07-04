@@ -1,5 +1,5 @@
 socket = require('socket')
-json = require('json')
+json = require('lunajson')
 host, port = "127.0.0.1", 51515
 
 function connect_server()
@@ -18,7 +18,7 @@ tcp:connect(host, port)
 
 function my_translator_impl(input, seg)
    local request = {request = "completion", input=input}
-   local bytes = json:encode(request)
+   local bytes = json.encode(request)
    local n = string.len(bytes)
    local head = tostring(n)
    assert(string.len(head) < 4)
@@ -26,7 +26,7 @@ function my_translator_impl(input, seg)
    assert(tcp:send(bytes))
    head, _, _ = assert(tcp:receive(4))
    bytes, _, _ = assert(tcp:receive(tonumber(head)))
-   return assert(json:decode(bytes))
+   return assert(json.decode(bytes))
 end
 
 function close_tcp()
